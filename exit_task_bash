@@ -1,0 +1,76 @@
+#!/bin/bash
+groupadd -g 505 denis_skakalski
+useradd -u 505 -g 505 denis_skakalski -p ""
+groupadd -g 600 staff
+useradd -u 600 -g 600 mongo -p ""
+
+mkdir -p -m750 /apps/mongo/
+chown -R mongo:staff /apps
+chown -R mongo:staff /apps/mongo
+
+mkdir -p -m750 /apps/mongodb/
+chown -R mongo:staff /apps
+chown -R mongo:staff /apps/mongodb
+
+mkdir -p -m740 /logs/mongo/
+chown -R mongo:staff /logs
+chown -R mongo:staff /logs/mongo
+
+yum install wget -y
+touch /etc/sudoers.d/mongo
+echo "mongo ALL=(ALL) NOPASSWD:/bin/wget" >> /etc/sudoers.d/mongo
+su - mongo -c "wget https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-3.6.5.tgz"
+su - mongo -c "curl -O https://fastdl.mongodb.org/src/mongodb-src-r3.6.5.tar.gz"
+su - mongo -c "tar zxvf /home/mongo/mongodb-linux-x86_64-3.6.5.tgz -C /tmp"
+su - mongo -c "cp -r /tmp/mongodb-linux-x86_64-3.6.5/. /apps/mongo/"
+
+
+su -l mongo -c 'export PATH=/apps/mongo/bin:$PATH'
+
+su mongo -c "echo 'export PATH=/apps/mongo/bin:$PATH' >> /home/mongo/.bash_profile"
+su mongo -c "echo 'export PATH=/apps/mongo/bin:$PATH' >> /home/mongo/.bashrc"
+
+
+echo "mongo soft npoc 32000" > /etc/security/limits.conf
+echo "mongo hard npoc 32000" >> /etc/security/limits.conf
+
+touch /etc/sudoers.d/denis_skakalski
+echo 'denis_skakalski ALL = (mongo) NOPASSWD:/apps/mongo/bin/mongod' > /etc/sudoers.d/denis_skakalski
+
+tar zxvf /home/mongo/mongodb-src-r3.6.5.tar.gz -C /home/mongo/
+cp /home/mongo/mongodb-src-r3.6.5/debian/mongod.conf  /apps/mongo/
+
+
+sed -i '/dbPath/s/\/.*/\/apps\/mongodb/g' /apps/mongo/mongod.conf
+sed -i '/path/s/\/.*/\/logs\/mongo\/mongod.log/g' /apps/mongo/mongod.conf
+
+
+
+cat << EOF > /etc/systemd/system/mongod.service
+[Unit]
+After=network.target
+
+[Service]
+User=mongo
+Group=staff
+ExecStart=/apps/mongo/bin/mongod -f /apps/mongo/mongod.conf
+ExecStartPre=/usr/bin/mkdir -p /apps/mongod
+ExecStartPre=/usr/bin/chown mongo:staff /apps/mongodb
+ExecStartPre=/usr/bin/chmod 0750 /apps/mongodb
+ExecStartPre=/usr/bin/mkdir -p /logs/mongo
+ExecStartPre=/usr/bin/chown mongo:staff /logs/mongo
+ExecStartPre=/usr/bin/chmod 0740 /logs/mongo
+PermissionsStartOnly=true
+PIDFile=/apps/mongodb/mongod.pid
+Type=simple
+
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable mongod.service
+yum install net-tools -y
+
+
